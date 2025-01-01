@@ -16,3 +16,11 @@ export function generateRandomCode(length: number) {
 
   return result;
 }
+
+export function formatTime(date: Date) {
+  const hours = date.getHours();
+  const minutes = date.getMinutes();
+  const amPm = hours >= 12 ? "PM" : "AM";
+
+  return `${hours % 12 || 12}:${minutes.toString().padStart(2, "0")} ${amPm}`;
+}
