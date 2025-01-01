@@ -13,7 +13,9 @@ type Message = {
     message: string;
     time: string;
 };
+
 const WebSocketURL = import.meta.env.VITE_WS_URL as string;
+
 const ChatRoom = () => {
     const { roomCode } = useParams<{ roomCode: string }>();
     const navigate = useNavigate();
@@ -31,65 +33,59 @@ const ChatRoom = () => {
     };
 
     useEffect(() => {
-        scrollToBottom();
-    }, [messages]);
-
-    const connectWebSocket = () => {
-        const wss = new WebSocket(WebSocketURL);
-        ws.current = wss;
-
-        wss.onopen = () => {
-            setIsConnected(true);
-            setError("");
-            console.log("Connected to WebSocket server");
-            wss.send(JSON.stringify({ type: "joinRoom", roomCode }));
-        };
-
-        wss.onmessage = (messageEvent) => {
-            const data = JSON.parse(messageEvent.data);
-            switch (data.type) {
-                case "message":
-                    setMessages((prevMessages) => [...prevMessages, { user: data.userId, message: data.message, time: data.time }]);
-                    break;
-                case "userJoined":
-                    setUsersOnline((prev) => prev + 1);
-                    break;
-                case "userLeft":
-                    setUsersOnline((prev) => Math.max(0, prev - 1));
-                    break;
-                case "roomJoined":
-                    setMessages(data.messages);
-                    setUsersOnline(data.usersOnline);
-                    break;
-                case "error":
-                    setError(data.message);
-                    if (data.message === "Room does not exist.") {
-                        setTimeout(() => navigate("/"), 3000);
-                    }
-                    break;
+        const connectWebSocket = () => {
+            if (ws.current) {
+                ws.current.close();
             }
+
+            const wss = new WebSocket(WebSocketURL);
+            ws.current = wss;
+
+            wss.onopen = () => {
+                setIsConnected(true);
+                setError("");
+                console.log("Connected to WebSocket server");
+                wss.send(JSON.stringify({ type: "joinRoom", roomCode }));
+            };
+
+            wss.onmessage = (messageEvent) => {
+                const data = JSON.parse(messageEvent.data);
+                switch (data.type) {
+                    case "message":
+                        setMessages((prevMessages) => [...prevMessages, { user: data.userId, message: data.message, time: data.time }]);
+                        break;
+                    case "userJoined":
+                        setUsersOnline((prev) => prev + 1);
+                        break;
+                    case "userLeft":
+                        setUsersOnline((prev) => Math.max(0, prev - 1));
+                        break;
+                    case "roomJoined":
+                        setMessages(data.messages);
+                        setUsersOnline(data.usersOnline);
+                        break;
+                    case "error":
+                        setError(data.message);
+                        if (data.message === "Room does not exist.") {
+                            setTimeout(() => navigate("/"), 3000);
+                        }
+                        break;
+                }
+            };
+
+            wss.onclose = () => {
+                setIsConnected(false);
+                // Attempt to reconnect after 3 seconds
+                reconnectTimeoutRef.current = setTimeout(connectWebSocket, 3000);
+            };
+
+            wss.onerror = () => {
+                setError("Connection error. Attempting to reconnect...");
+            };
         };
 
-        wss.onclose = () => {
-            setIsConnected(false);
-            // Attempt to reconnect after 3 seconds
-            reconnectTimeoutRef.current = setTimeout(connectWebSocket, 3000);
-        };
-
-        wss.onerror = () => {
-            setError("Connection error. Attempting to reconnect...");
-        };
-
-        return () => {
-            wss.close();
-            if (reconnectTimeoutRef.current) {
-                clearTimeout(reconnectTimeoutRef.current);
-            }
-        };
-    };
-
-    useEffect(() => {
         connectWebSocket();
+
         return () => {
             if (ws.current) {
                 ws.current.close();
@@ -100,13 +96,16 @@ const ChatRoom = () => {
         };
     }, [roomCode]);
 
+    useEffect(() => {
+        scrollToBottom();
+    }, [messages]);
+
     const handleSendMessage = () => {
         if (inputMessage.trim() && ws.current?.readyState === WebSocket.OPEN) {
             ws.current.send(JSON.stringify({ type: "message", roomCode, message: inputMessage.trim() }));
             setInputMessage("");
         }
     };
-
 
     return (
         <div className="bg-black text-white h-screen flex items-center justify-center p-2">
@@ -119,7 +118,7 @@ const ChatRoom = () => {
                         <div className="flex items-center gap-2">
                             <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`} />
                             <Users size={20} />
-                            <span>{usersOnline - 1}</span>
+                            <span>{usersOnline}</span>
                         </div>
                     </div>
                     <CardDescription className="text-lg">
@@ -139,14 +138,12 @@ const ChatRoom = () => {
                     )}
                     <ScrollArea className="h-[400px] rounded-lg border bg-neutral-700 p-4">
                         {messages.map((msg, index) => (
-                            <>
-                                <div key={index} className="flex w-full justify-between mb-4 last:mb-0">
-                                    <p className="text-base break-words">{msg.message}</p>
-                                    <span className="text-[10px] text-gray-400">
-                                        {formatTime(new Date(msg.time))}
-                                    </span>
-                                </div>
-                            </>
+                            <div key={index} className="flex w-full justify-between mb-4 last:mb-0">
+                                <p className="text-base break-words">{msg.message}</p>
+                                <span className="text-[10px] text-gray-400">
+                                    {formatTime(new Date(msg.time))}
+                                </span>
+                            </div>
                         ))}
                         <div ref={messagesEndRef} />
                     </ScrollArea>

@@ -22,12 +22,13 @@ interface Room {
 }
 
 const MAX_MESSAGE_LENGTH = 1000;
-const MAX_ROOM_HISTORY = 100;
-const ROOM_CLEANUP_INTERVAL = 24 * 60 * 60 * 1000;
+const MAX_ROOM_HISTORY = 200;
+const ROOM_CLEANUP_INTERVAL = 60 * 60 * 1000; // 1 hours
 const PING_INTERVAL = 30000;
 
 const rooms: Map<string, Room> = new Map();
-const userSockets: Map<WebSocket, string> = new Map();
+const userSockets: Map<WebSocket, { roomCode: string; userId: string }> =
+  new Map();
 
 const wss = new WebSocketServer({
   port: parseInt(process.env.WEBSOCKET_SERVER_PORT || "8080"),
@@ -38,13 +39,16 @@ function cleanupOldRooms() {
   rooms.forEach((room, roomCode) => {
     const roomAge = now.getTime() - room.createdAt.getTime();
     if (roomAge > ROOM_CLEANUP_INTERVAL && room.users.size === 0) {
+      console.log(`Cleaning up old empty room: ${roomCode}`);
       rooms.delete(roomCode);
     }
   });
 }
 
+setInterval(cleanupOldRooms, ROOM_CLEANUP_INTERVAL);
+
 function broadcastToRoom(room: Room, message: any, excludeSocket?: WebSocket) {
-  room.users.forEach((userSocket, userId) => {
+  room.users.forEach((userSocket) => {
     if (!excludeSocket || userSocket !== excludeSocket) {
       if (userSocket.readyState === WebSocket.OPEN) {
         userSocket.send(JSON.stringify(message));
@@ -53,14 +57,17 @@ function broadcastToRoom(room: Room, message: any, excludeSocket?: WebSocket) {
   });
 }
 
-function validateMessage(message: string) {
-  return message && message.length > 0 && message.length <= MAX_MESSAGE_LENGTH;
+function validateMessage(message: string): boolean {
+  return (
+    typeof message === "string" &&
+    message.length > 0 &&
+    message.length <= MAX_MESSAGE_LENGTH
+  );
 }
-
-setInterval(cleanupOldRooms, ROOM_CLEANUP_INTERVAL);
 
 wss.on("connection", (socket: WebSocket) => {
   console.log("New client connected");
+
   let pingTimeout: NodeJS.Timeout;
 
   const heartbeat = () => {
@@ -71,6 +78,7 @@ wss.on("connection", (socket: WebSocket) => {
   };
 
   socket.on("pong", heartbeat);
+
   const pingInterval = setInterval(() => {
     socket.ping();
   }, PING_INTERVAL);
@@ -110,7 +118,7 @@ wss.on("connection", (socket: WebSocket) => {
           };
 
           rooms.set(roomCode, room);
-          userSockets.set(socket, roomCode);
+          userSockets.set(socket, { roomCode, userId });
 
           socket.send(
             JSON.stringify({
@@ -119,12 +127,12 @@ wss.on("connection", (socket: WebSocket) => {
               userId,
             })
           );
-
           break;
         }
 
         case "joinRoom": {
-          const room = rooms.get(roomCode);
+          let room = rooms.get(roomCode);
+
           if (!room) {
             socket.send(
               JSON.stringify({
@@ -137,8 +145,9 @@ wss.on("connection", (socket: WebSocket) => {
 
           const userId = randomUUID();
           room.users.set(userId, socket);
-          userSockets.set(socket, roomCode);
+          userSockets.set(socket, { roomCode, userId });
 
+          // Send joined confirmation
           socket.send(
             JSON.stringify({
               type: "roomJoined",
@@ -149,6 +158,7 @@ wss.on("connection", (socket: WebSocket) => {
             })
           );
 
+          // Notify other users
           broadcastToRoom(
             room,
             {
@@ -158,7 +168,6 @@ wss.on("connection", (socket: WebSocket) => {
             },
             socket
           );
-
           break;
         }
 
@@ -184,14 +193,12 @@ wss.on("connection", (socket: WebSocket) => {
             return;
           }
 
+          const { userId } = userSockets.get(socket) || { userId: "unknown" };
           const messageInfo: MessageInfo = {
             id: randomUUID(),
             message: data.message!,
             time: new Date().toISOString(),
-            userId:
-              Array.from(room.users.entries()).find(
-                ([_, sock]) => sock === socket
-              )?.[0] || "unknown",
+            userId,
           };
 
           room.messages.push(messageInfo);
@@ -230,35 +237,35 @@ wss.on("connection", (socket: WebSocket) => {
     clearInterval(pingInterval);
     clearTimeout(pingTimeout);
 
-    const roomCode = userSockets.get(socket);
-    if (roomCode) {
-      const room = rooms.get(roomCode);
-      if (room) {
-        // Find and remove the user
-        for (const [userId, sock] of room.users.entries()) {
-          if (sock === socket) {
-            room.users.delete(userId);
-            break;
-          }
-        }
-
-        if (room.users.size > 0) {
-          broadcastToRoom(room, {
-            type: "userLeft",
-            message: "A user has left the room.",
-            usersOnline: room.users.size,
-          });
-        } else {
-          rooms.delete(roomCode);
-        }
-      }
-      userSockets.delete(socket);
+    const userDetails = userSockets.get(socket);
+    if (!userDetails) {
+      console.warn("Socket closed but no user details found.");
+      return;
     }
-    console.log("Client disconnected");
+
+    const { roomCode, userId } = userDetails;
+    const room = rooms.get(roomCode);
+
+    if (!room) {
+      userSockets.delete(socket);
+      return;
+    }
+
+    room.users.delete(userId);
+
+    broadcastToRoom(room, {
+      type: "userLeft",
+      message: "A user has left the room.",
+      usersOnline: room.users.size,
+    });
+
+    userSockets.delete(socket);
+    console.log(
+      `User disconnected from room ${roomCode}. Users remaining: ${room.users.size}`
+    );
   });
 });
 
-// Error handling for the server
 wss.on("error", (error) => {
   console.error("WebSocket Server Error:", error);
 });
@@ -272,5 +279,5 @@ process.on("SIGTERM", () => {
 });
 
 console.log(
-  `WebSocket Server started on port ${process.env.WESOCKET_SERVER_PORT}`
+  `WebSocket Server started on port ${process.env.WEBSOCKET_SERVER_PORT}`
 );
