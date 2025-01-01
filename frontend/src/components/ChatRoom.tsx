@@ -13,7 +13,7 @@ type Message = {
     message: string;
     time: string;
 };
-
+const WebSocketURL = import.meta.env.VITE_WS_URL as string;
 const ChatRoom = () => {
     const { roomCode } = useParams<{ roomCode: string }>();
     const navigate = useNavigate();
@@ -35,7 +35,7 @@ const ChatRoom = () => {
     }, [messages]);
 
     const connectWebSocket = () => {
-        const wss = new WebSocket("ws://localhost:8080/");
+        const wss = new WebSocket(WebSocketURL);
         ws.current = wss;
 
         wss.onopen = () => {

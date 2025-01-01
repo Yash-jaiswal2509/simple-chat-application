@@ -7,7 +7,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { generateRandomCode } from "@/lib/utils";
 import { Copy, CopyCheckIcon, LoaderCircle, MessageCircleMoreIcon, AlertTriangle } from "lucide-react";
 
-const WebSocketURL = import.meta.env.VITE_WS_URL as string || "ws://localhost:8080/";
+const WebSocketURL = import.meta.env.VITE_WS_URL as string;
 
 const CreateRoom = () => {
     const [roomCode, setRoomCode] = useState<string>("");

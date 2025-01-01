@@ -30,7 +30,7 @@ const rooms: Map<string, Room> = new Map();
 const userSockets: Map<WebSocket, string> = new Map();
 
 const wss = new WebSocketServer({
-  port: parseInt(process.env.WESOCKET_SERVER_PORT!) as number,
+  port: parseInt(process.env.WEBSOCKET_SERVER_PORT || "8080"),
 });
 
 function cleanupOldRooms() {
