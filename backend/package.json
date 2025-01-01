@@ -11,7 +11,11 @@
   "description": "",
   "dependencies": {
     "@types/ws": "^8.5.13",
+    "dotenv": "^16.4.7",
     "typescript": "^5.7.2",
     "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/dotenv": "^6.1.1"
   }
 }
